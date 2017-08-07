@@ -1,0 +1,19 @@
+{
+  "name": "pefuncs",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "aws-sdk": "^2.94.0",
+    "express": "^4.15.3",
+    "faye": "^1.2.4",
+    "jsforce": "^1.8.0",
+    "nforce": "^1.7.0",
+    "request": "^2.81.0"
+  }
+}

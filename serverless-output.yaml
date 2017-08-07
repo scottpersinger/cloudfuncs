@@ -1,0 +1,30 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: An AWS Serverless Specification template describing your function.
+Metadata:
+  PESubscriptions:
+    NewContact__e: index.handleContact
+    NewLead__e: index.handleLead
+Resources:
+  finalizeLead:
+    Properties:
+      CodeUri: s3://my-lambda-examples/30fe17be0e419f3037eabaf25a3e6726
+      Description: ''
+      FunctionName: finalizeLead
+      Handler: index.finalizeLead
+      MemorySize: 128
+      Role: arn:aws:iam::040552978376:role/service-role/mylambdarole
+      Runtime: nodejs6.10
+      Timeout: 3
+    Type: AWS::Serverless::Function
+  handleLead:
+    Properties:
+      CodeUri: s3://my-lambda-examples/30fe17be0e419f3037eabaf25a3e6726
+      Description: ''
+      FunctionName: handleLead
+      Handler: index.handleLead
+      MemorySize: 128
+      Role: arn:aws:iam::040552978376:role/service-role/mylambdarole
+      Runtime: nodejs6.10
+      Timeout: 3
+    Type: AWS::Serverless::Function
+Transform: AWS::Serverless-2016-10-31
