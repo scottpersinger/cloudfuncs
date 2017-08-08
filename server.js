@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-
+let fs = require('fs');
+let yaml = require('js-yaml')
 let request = require('request');
 let nforce = require('nforce');
 let faye = require('faye');
@@ -16,7 +17,10 @@ let SF_CLIENT_SECRET = process.env.SF_CLIENT_SECRET;
 let SF_USER_NAME = process.env.SF_USER_NAME;
 let SF_USER_PASSWORD = process.env.SF_USER_PASSWORD;
 
-let DISPATCH_LOCAL = false;
+var DISPATCH_LOCAL = false;
+var RECORD = false;
+var PLAYBACK = false;
+let recording_file = './events.log'
 
 let org = nforce.createConnection({
     clientId: SF_CLIENT_ID,
@@ -34,34 +38,71 @@ org.authenticate({username: SF_USER_NAME, password: SF_USER_PASSWORD}, err => {
     } else {
         console.log("Salesforce authentication successful");
         console.log(org.oauth.instance_url);
-        subscribeToPlatformEvents();
+        startCommander();
     }
 });
 
 // Subscribe to Platform Events
-let subscribeToPlatformEvents = () => {
+let subscribeToPlatformEvents = (config_file) => {
+    var config = yaml.safeLoad(fs.readFileSync(config_file));
+    var subs = config.Metadata.PESubscriptions
+
     var client = new faye.Client(org.oauth.instance_url + '/cometd/40.0/');
     client.setHeader('Authorization', 'OAuth ' + org.oauth.access_token);
-    client.subscribe('/event/NewLead__e', function(message) {
-        // Send message to all connected Socket.io clients
-        if (DISPATCH_LOCAL) {
-            dispatchLocal('handleLead', message.payload);
-        } else {
-            dispatchCloud('handleLead', message.payload);
-        }
-    });
-    client.subscribe('/event/LeadProcessed__e', function(message) {
-        // Send message to all connected Socket.io clients
-        if (DISPATCH_LOCAL) {
-            dispatchLocal('finalizeLead', message.payload);
-        } else {
-            dispatchCloud('finalizeLead', message.payload);
-        }
-    });
+
+    for (let eventkey in subs) {
+        console.log(`Subscribing to platform event '${eventkey}'`)
+        client.subscribe(`/event/${eventkey}`, (function(eventName, targetFunc) {
+            return function(message) {
+                // Send message to all connected Socket.io clients
+                if (RECORD) {
+                    var packet = {}
+                    console.log("Recording event for key ", eventName)
+                    packet[eventName] = message
+                    fs.appendFileSync(recording_file, JSON.stringify(packet) + "\n");
+                }
+                if (DISPATCH_LOCAL) {
+                    dispatchLocal(targetFunc, message.payload);
+                } else {
+                    dispatchCloud(targetFunc, message.payload);
+                }
+            }
+        }(eventkey, subs[eventkey]))
+        );
+    }
 };
 
+let replayRecordedEvents = (config_file) => {
+    var config = yaml.safeLoad(fs.readFileSync(config_file));
+    var subs = config.Metadata.PESubscriptions
+
+    var lineReader = require('readline').createInterface({
+      input: fs.createReadStream(recording_file)
+    });
+
+    lineReader.on('line', function (line) {
+      var event = JSON.parse(line)
+      for (var eventkey in event) {
+        var message = event[eventkey];
+        var targetFunc = subs[eventkey]
+        if (DISPATCH_LOCAL) {
+            dispatchLocal(targetFunc, message.payload);
+        } else {
+            dispatchCloud(targetFunc, message.payload);
+        }       
+      }
+    });
+}
+
 let dispatchLocal = (funcname, payload) => {
-    var lamfuncs = require('./index.js');
+    var funcparts = funcname.split(".")
+    var modname = funcparts[0]
+    var funcname = funcparts[1]
+    var lamfuncs = require(`./${modname}`);
+    if (lamfuncs[funcname] === undefined) {
+        console.log(`Error, function '${funcname}' not found in index.js`)
+        return;
+    }
     var event = {body: payload, auth: {access_token: org.oauth.access_token, instance_url: org.oauth.instance_url}};
     lamfuncs[funcname](event, {}, function(err, result) {
         console.log("Handler returned: ", result);
@@ -69,10 +110,10 @@ let dispatchLocal = (funcname, payload) => {
 }
 
 let dispatchCloud = (funcname, payload) => {
-    var stack = "pefuncs-demo1"
+    var funcparts = funcname.split(".")
     var event = {body: payload, auth: {access_token: org.oauth.access_token, instance_url: org.oauth.instance_url}};
     var params = {
-        FunctionName: funcname, 
+        FunctionName: funcparts[1], 
         InvocationType: "RequestResponse", 
         LogType: "Tail", 
         Payload: JSON.stringify(event)
@@ -144,3 +185,34 @@ app.listen(3000, function () {
   console.log('Example app listening on port 3000!')
 })
 
+let startCommander = () => {
+    let program = require('commander');
+
+    program
+      .version('0.0.1')
+      .option('-r --record', 'Record events for later playback')
+      .option('-p --playback', 'Playback previous recorded events')
+      .command('start <local|cloud>')
+      .action(function(target) {
+        if (program.record) {
+            RECORD = true;
+            if (fs.existsSync(recording_file)) {
+                fs.truncateSync(recording_file);
+            }
+            console.log("..recording events")
+        }
+        if (target == 'local') {
+            DISPATCH_LOCAL = true;
+        } else {
+            DISPATCH_LOCAL = false;
+        }
+        if (program.playback) {
+            PLAYBACK = true;
+            replayRecordedEvents('./subscriptions.yml');
+        } else {
+            subscribeToPlatformEvents('./subscriptions.yml');
+        }
+      });
+
+    program.parse(process.argv);   
+}

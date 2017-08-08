@@ -2,12 +2,12 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: An AWS Serverless Specification template describing your function.
 Metadata:
   PESubscriptions:
-    NewContact__e: index.handleContact
+    LeadProcessed__e: index.finalizeLead
     NewLead__e: index.handleLead
 Resources:
   finalizeLead:
     Properties:
-      CodeUri: s3://my-lambda-examples/30fe17be0e419f3037eabaf25a3e6726
+      CodeUri: s3://my-lambda-examples/a9af5c17ef2ef98f5eb60786e2bfcff8
       Description: ''
       FunctionName: finalizeLead
       Handler: index.finalizeLead
@@ -18,7 +18,7 @@ Resources:
     Type: AWS::Serverless::Function
   handleLead:
     Properties:
-      CodeUri: s3://my-lambda-examples/30fe17be0e419f3037eabaf25a3e6726
+      CodeUri: s3://my-lambda-examples/a9af5c17ef2ef98f5eb60786e2bfcff8
       Description: ''
       FunctionName: handleLead
       Handler: index.handleLead

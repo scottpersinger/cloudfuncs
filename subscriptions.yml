@@ -26,5 +26,15 @@ Resources:
       Role: 'arn:aws:iam::040552978376:role/service-role/mylambdarole'
 Metadata:
   PESubscriptions:
-    NewLead__e: index.handleLead
-    NewContact__e: index.handleContact
+    NewLead__e: 
+      module: index
+      function: handleLead
+      connections: 
+        - scottpersinger@gmail.com
+        - scottp@mobileforce.com
+    LeadProcessed__e:
+      module: index
+      function: finalizeLead
+      connections:
+        - scottpersinger@gmail.com
+        - scottp@mobileforce.com
