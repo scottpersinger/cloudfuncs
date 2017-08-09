@@ -1,0 +1,20 @@
+let org = nforce.createConnection({
+    clientId: SF_CLIENT_ID,
+    clientSecret: SF_CLIENT_SECRET,
+    environment: "production",
+    redirectUri: AMZ_REDIRECT_URI,
+    mode: 'single',
+    autoRefresh: true
+});
+
+org.authenticate({username: SF_USER_NAME, password: SF_USER_PASSWORD}, err => {
+    if (err) {
+        console.error("Salesforce authentication error");
+        console.error(err);
+    } else {
+        console.log("Salesforce authentication successful");
+        console.log(org.oauth.instance_url);
+        startCommander();
+    }
+});
+

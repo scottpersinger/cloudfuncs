@@ -1,0 +1,42 @@
+<html>
+<head>
+  <style>
+		table {
+    		border-collapse: collapse;
+		}
+
+		table, th, td {
+    		border: 1px solid black;
+		}
+
+		td {
+			padding:10px;
+		}
+  </style>
+</head>
+<body>
+
+<h1>Cloudfuncs</h1>
+
+<form action="/oauth2/auth" method="GET">
+<button type="submit">Login to Salesforce</button>
+</form>
+
+<h2>Connections<h2>
+
+<table>
+    <tr>
+	  <th>Username</th><th>Org Id</th>
+	</tr>
+  <% for (var userId in users) { %>
+  <% user = users[userId] %>
+  	<tr>
+  		<td><%= user.username %></td>
+  		<td><%= user.organization_id %></td>
+  	</tr>
+  <% } %>
+</table>
+
+
+</body>
+</html>

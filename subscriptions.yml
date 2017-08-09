@@ -27,14 +27,16 @@ Resources:
 Metadata:
   PESubscriptions:
     NewLead__e: 
-      module: index
-      function: handleLead
+      function: index.handleLead
       connections: 
-        - scottpersinger@gmail.com
-        - scottp@mobileforce.com
+        - 00Dd0000000cve9EAA
+        - 00DE0000000aw3qMAA
     LeadProcessed__e:
-      module: index
-      function: finalizeLead
+      function: index.finalizeLead
       connections:
-        - scottpersinger@gmail.com
-        - scottp@mobileforce.com
+        - 00Dd0000000cve9EAA
+    InterestLead__e:
+      function: index.notifyLeadWithInterest
+      connections:
+        - 00Dd0000000cve9EAA
+        

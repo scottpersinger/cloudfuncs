@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 let fs = require('fs');
+let path = require('path')
+let https = require('https')
 let yaml = require('js-yaml')
 let request = require('request');
 let nforce = require('nforce');
+let jsforce = require('jsforce');
 let faye = require('faye');
 let AWS = require('aws-sdk');
 AWS.config.update({region:'us-east-1'});
@@ -21,54 +24,80 @@ var DISPATCH_LOCAL = false;
 var RECORD = false;
 var PLAYBACK = false;
 let recording_file = './events.log'
+let CLIENTS = {}
+let USERS = {}
 
-let org = nforce.createConnection({
-    clientId: SF_CLIENT_ID,
-    clientSecret: SF_CLIENT_SECRET,
-    environment: "production",
-    redirectUri: AMZ_REDIRECT_URI,
-    mode: 'single',
-    autoRefresh: true
-});
+let loadUsers = () => {
+    if (fs.existsSync('./users.json')) {
+        USERS = JSON.parse(fs.readFileSync('./users.json'))
+    }   
+}
 
-org.authenticate({username: SF_USER_NAME, password: SF_USER_PASSWORD}, err => {
-    if (err) {
-        console.error("Salesforce authentication error");
-        console.error(err);
+let saveUser = (userInfo) => {
+    console.log("Saving: ", userInfo)
+    USERS[userInfo.user_id] = userInfo
+    fs.writeFileSync('./users.json', JSON.stringify(USERS))
+}
+
+let getClient = (orgId) => {
+    if (CLIENTS[orgId]) {
+        return CLIENTS[orgId]
     } else {
-        console.log("Salesforce authentication successful");
-        console.log(org.oauth.instance_url);
-        startCommander();
+        // Find a user from the org
+        var userRec = null;
+        for (var userId in USERS) {
+            if (USERS[userId].organization_id == orgId) {
+                userRec = USERS[userId];
+                break;
+            }
+        }
+        if (userRec) {
+            var conn = new jsforce.Connection({
+                instanceUrl: userRec.instance_url,
+                accessToken: userRec.access_token
+            });
+            return {conn: conn, userRec: userRec};
+        } else {
+            return null;
+        }
+
+        //var client = new faye.Client(org.oauth.instance_url + '/cometd/40.0/');
+        //client.setHeader('Authorization', 'OAuth ' + org.oauth.access_token);
     }
-});
+}
 
 // Subscribe to Platform Events
 let subscribeToPlatformEvents = (config_file) => {
     var config = yaml.safeLoad(fs.readFileSync(config_file));
     var subs = config.Metadata.PESubscriptions
 
-    var client = new faye.Client(org.oauth.instance_url + '/cometd/40.0/');
-    client.setHeader('Authorization', 'OAuth ' + org.oauth.access_token);
-
     for (let eventkey in subs) {
-        console.log(`Subscribing to platform event '${eventkey}'`)
-        client.subscribe(`/event/${eventkey}`, (function(eventName, targetFunc) {
-            return function(message) {
-                // Send message to all connected Socket.io clients
-                if (RECORD) {
-                    var packet = {}
-                    console.log("Recording event for key ", eventName)
-                    packet[eventName] = message
-                    fs.appendFileSync(recording_file, JSON.stringify(packet) + "\n");
-                }
-                if (DISPATCH_LOCAL) {
-                    dispatchLocal(targetFunc, message.payload);
-                } else {
-                    dispatchCloud(targetFunc, message.payload);
-                }
+        subs[eventkey].connections.forEach(function (orgId) {
+            console.log(`Subscribing to platform event '${eventkey}' from Org ${orgId}`)
+            var tuple = getClient(orgId)
+            if (!tuple) {
+                console.log("Error: no connection for Org: ", orgId);
+                next;
             }
-        }(eventkey, subs[eventkey]))
-        );
+            var client = tuple.conn;
+            var userRec = tuple.userRec;
+            client.streaming.topic(`/event/${eventkey}`).subscribe((function(eventName, targetFunc, userRec) {
+                return function(message) {
+                    if (RECORD) {
+                        var packet = {}
+                        console.log("Recording event for key ", eventName)
+                        packet[eventName] = message
+                        fs.appendFileSync(recording_file, JSON.stringify(packet) + "\n");
+                    }
+                    if (DISPATCH_LOCAL) {
+                        dispatchLocal(targetFunc, message.payload, userRec);
+                    } else {
+                        dispatchCloud(targetFunc, message.payload, userRec);
+                    }
+                }
+            }(eventkey, subs[eventkey].function, userRec))
+            );
+        })
     }
 };
 
@@ -94,7 +123,7 @@ let replayRecordedEvents = (config_file) => {
     });
 }
 
-let dispatchLocal = (funcname, payload) => {
+let dispatchLocal = (funcname, payload, userRec) => {
     var funcparts = funcname.split(".")
     var modname = funcparts[0]
     var funcname = funcparts[1]
@@ -103,15 +132,17 @@ let dispatchLocal = (funcname, payload) => {
         console.log(`Error, function '${funcname}' not found in index.js`)
         return;
     }
-    var event = {body: payload, auth: {access_token: org.oauth.access_token, instance_url: org.oauth.instance_url}};
+    var event = {body: payload, auth: {access_token: userRec.access_token, instance_url: userRec.instance_url},
+                  meta: {organization_id: userRec.organization_id}};
     lamfuncs[funcname](event, {}, function(err, result) {
         console.log("Handler returned: ", result);
     });
 }
 
-let dispatchCloud = (funcname, payload) => {
+let dispatchCloud = (funcname, payload, userRec) => {
     var funcparts = funcname.split(".")
-    var event = {body: payload, auth: {access_token: org.oauth.access_token, instance_url: org.oauth.instance_url}};
+    var event = {body: payload, auth: {access_token: userRec.access_token, instance_url: userRec.instance_url},
+                  meta: {organization_id: userRec.organization_id}};
     var params = {
         FunctionName: funcparts[1], 
         InvocationType: "RequestResponse", 
@@ -180,12 +211,61 @@ app.get('/openid/callback', function(req, res) {
     });*/
 })
 
-app.use(express.static('views'))
-app.listen(3000, function () {
-  console.log('Example app listening on port 3000!')
+app.use(express.static('./views'))
+app.set('view engine', 'ejs')
+app.set('views', './views')
+
+var oauth2 = new jsforce.OAuth2({
+  // you can change loginUrl to connect to sandbox or prerelease env.
+  // loginUrl : 'https://test.salesforce.com',
+  clientId : process.env.SF_CLIENT_ID,
+  clientSecret : process.env.SF_CLIENT_SECRET,
+  redirectUri : 'https://localhost:3000/sf/callback'
+});
+
+app.get('/', function (req, res) {
+
+    res.render('index', { users: USERS })
 })
 
+app.get('/oauth2/auth', function(req, res) {
+  res.redirect(oauth2.getAuthorizationUrl({prompt: "select_account"}));
+});
+
+app.get('/sf/callback', function(req, res) {
+    var conn = new jsforce.Connection({ oauth2 : oauth2 });
+    var code = req.param('code');
+    conn.authorize(code, function(err, userInfo) {
+    if (err) { return console.error(err); }
+        // Now you can get the access token, refresh token, and instance URL information.
+        // Save them to establish connection next time.
+        console.log(conn.accessToken);
+        console.log(conn.refreshToken);
+        console.log(conn.instanceUrl);
+        console.log("User ID: " + userInfo.id);
+        console.log("Org ID: " + userInfo.organizationId);
+        conn.identity(function(err, res) {
+            saveUser({username: res.username, idurl: res.id, instance_url: conn.instanceUrl, 
+                        access_token: conn.accessToken, refresh_token: conn.refreshToken,
+                        organization_id: userInfo.organizationId, user_id: userInfo.id})
+        })
+        // ...
+        res.send('<html><body><h2>success</h2><a href="/">Home</a></body></html'); // or your desired response
+  });
+})
+
+var options = {
+  key: fs.readFileSync(path.join(process.env.HOME, 'src/certs/server.key')),
+  cert: fs.readFileSync(path.join(process.env.HOME, 'src/certs/server.crt'))
+};
+
+https.createServer(options, app).listen(3000, function() {
+    console.log('Express HTTPS server listening on port ' + app.get('port'));
+});
+
+
 let startCommander = () => {
+    loadUsers();
     let program = require('commander');
 
     program
@@ -216,3 +296,4 @@ let startCommander = () => {
 
     program.parse(process.argv);   
 }
+startCommander()
