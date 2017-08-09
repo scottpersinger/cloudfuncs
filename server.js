@@ -26,11 +26,17 @@ var PLAYBACK = false;
 let recording_file = './events.log'
 let CLIENTS = {}
 let USERS = {}
+let SUBS = {}
 
 let loadUsers = () => {
     if (fs.existsSync('./users.json')) {
         USERS = JSON.parse(fs.readFileSync('./users.json'))
     }   
+}
+
+let loadSubscriptions = (config_file) => {
+    var config = yaml.safeLoad(fs.readFileSync(config_file));
+    SUBS = config.Metadata.PESubscriptions
 }
 
 let saveUser = (userInfo) => {
@@ -67,12 +73,9 @@ let getClient = (orgId) => {
 }
 
 // Subscribe to Platform Events
-let subscribeToPlatformEvents = (config_file) => {
-    var config = yaml.safeLoad(fs.readFileSync(config_file));
-    var subs = config.Metadata.PESubscriptions
-
-    for (let eventkey in subs) {
-        subs[eventkey].connections.forEach(function (orgId) {
+let subscribeToPlatformEvents = () => {
+    for (let eventkey in SUBS) {
+        SUBS[eventkey].connections.forEach(function (orgId) {
             console.log(`Subscribing to platform event '${eventkey}' from Org ${orgId}`)
             var tuple = getClient(orgId)
             if (!tuple) {
@@ -95,16 +98,13 @@ let subscribeToPlatformEvents = (config_file) => {
                         dispatchCloud(targetFunc, message.payload, userRec);
                     }
                 }
-            }(eventkey, subs[eventkey].function, userRec))
+            }(eventkey, SUBS[eventkey].function, userRec))
             );
         })
     }
 };
 
-let replayRecordedEvents = (config_file) => {
-    var config = yaml.safeLoad(fs.readFileSync(config_file));
-    var subs = config.Metadata.PESubscriptions
-
+let replayRecordedEvents = () => {
     var lineReader = require('readline').createInterface({
       input: fs.createReadStream(recording_file)
     });
@@ -113,7 +113,7 @@ let replayRecordedEvents = (config_file) => {
       var event = JSON.parse(line)
       for (var eventkey in event) {
         var message = event[eventkey];
-        var targetFunc = subs[eventkey]
+        var targetFunc = SUBS[eventkey]
         if (DISPATCH_LOCAL) {
             dispatchLocal(targetFunc, message.payload);
         } else {
@@ -225,7 +225,14 @@ var oauth2 = new jsforce.OAuth2({
 
 app.get('/', function (req, res) {
 
-    res.render('index', { users: USERS })
+    res.render('index', { users: USERS, subs: SUBS })
+})
+
+app.get('/dashboard/getfunc/:funcname', function(req, res) {
+    var parts = req.params.funcname.split(".")
+    var mod = require(`./${parts[0]}`)
+    var thefunc = mod[parts[1]]
+    res.send(`function ${parts[1]} ${thefunc.toString()}`);
 })
 
 app.get('/oauth2/auth', function(req, res) {
@@ -266,6 +273,7 @@ https.createServer(options, app).listen(3000, function() {
 
 let startCommander = () => {
     loadUsers();
+    loadSubscriptions('./subscriptions.yml')
     let program = require('commander');
 
     program
@@ -288,9 +296,9 @@ let startCommander = () => {
         }
         if (program.playback) {
             PLAYBACK = true;
-            replayRecordedEvents('./subscriptions.yml');
+            replayRecordedEvents();
         } else {
-            subscribeToPlatformEvents('./subscriptions.yml');
+            subscribeToPlatformEvents();
         }
       });
 

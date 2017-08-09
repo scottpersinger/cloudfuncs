@@ -13,29 +13,62 @@
 			padding:10px;
 		}
   </style>
+  <script src="jquery-3.2.1.min.js"></script>
 </head>
 <body>
 
-<h1>Cloudfuncs</h1>
+<div style="float:left;width:50%;border-right:1px solid #ccc">
 
-<form action="/oauth2/auth" method="GET">
-<button type="submit">Login to Salesforce</button>
-</form>
+	<h1>Cloudfuncs</h1>
 
-<h2>Connections<h2>
+	<form action="/oauth2/auth" method="GET">
+	<button type="submit">Login to Salesforce</button>
+	</form>
 
-<table>
-    <tr>
-	  <th>Username</th><th>Org Id</th>
-	</tr>
-  <% for (var userId in users) { %>
-  <% user = users[userId] %>
-  	<tr>
-  		<td><%= user.username %></td>
-  		<td><%= user.organization_id %></td>
-  	</tr>
-  <% } %>
-</table>
+	<h2>Connections<h2>
+
+	<table>
+	    <tr>
+		  <th>Username</th><th>Org Id</th>
+		</tr>
+	  <% for (var userId in users) { %>
+	  <% user = users[userId] %>
+	  	<tr>
+	  		<td><%= user.username %></td>
+	  		<td><%= user.organization_id %></td>
+	  	</tr>
+	  <% } %>
+	</table>
+
+	<hr>
+	<h2>Subscriptions</h2>
+	<table>
+	    <tr>
+		  <th>Platform Event</th><th>Function</th><th>Org Id</th>
+		</tr>
+	  <% for (var pe in subs) { %>
+	  <% sub = subs[pe] %>
+	  	<tr>
+	  		<td><%= pe %></td>
+	  		<td><a href="#" onclick="loadFunction('<%= sub.function %>')"><%= sub.function %></a></td>
+	  		<td><%- sub.connections.join("<br />") %></td>
+	  	</tr>
+	  <% } %>
+	</table>
+</div>
+
+<div style="float:left;width:40%">
+<pre id="codediv">
+</pre>
+</div>
+
+<script>
+  function loadFunction(func) {
+  	$.get('/dashboard/getfunc/' + func, function(data) {
+  		$('#codediv').text(data);
+  	}, 'text');
+  }
+</script>
 
 
 </body>
