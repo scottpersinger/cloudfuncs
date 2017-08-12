@@ -1,5 +1,5 @@
 {
-  "name": "cloudfuncs",
+  "name": "cfservice",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -13,6 +13,7 @@
   "license": "ISC",
   "dependencies": {
     "aws-sdk": "^2.94.0",
+    "cloudfuncs": "^1.0.0",
     "commander": "^2.11.0",
     "ejs": "^2.5.7",
     "express": "^4.15.3",
@@ -21,6 +22,7 @@
     "jsforce": "^1.8.0",
     "nforce": "^1.7.0",
     "request": "^2.81.0",
-    "salesforce-jwt": "^0.1.0"
+    "salesforce-jwt": "^0.1.0",
+    "socket.io": "^2.0.3"
   }
 }

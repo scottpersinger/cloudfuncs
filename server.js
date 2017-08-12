@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 let fs = require('fs');
+let util = require('util')
 let path = require('path')
 let https = require('https')
 let yaml = require('js-yaml')
 let request = require('request');
-let nforce = require('nforce');
 let jsforce = require('jsforce');
+var jwtflow = require('salesforce-jwt');
 let faye = require('faye');
 let AWS = require('aws-sdk');
 AWS.config.update({region:'us-east-1'});
@@ -27,6 +28,7 @@ let recording_file = './events.log'
 let CLIENTS = {}
 let USERS = {}
 let SUBS = {}
+let HOST_ENDPOINT = 'http://localhost:5000/'
 
 let loadUsers = () => {
     if (fs.existsSync('./users.json')) {
@@ -45,7 +47,7 @@ let saveUser = (userInfo) => {
     fs.writeFileSync('./users.json', JSON.stringify(USERS))
 }
 
-let getClient = (orgId) => {
+let getClient = (orgId, callback) => {
     if (CLIENTS[orgId]) {
         return CLIENTS[orgId]
     } else {
@@ -58,17 +60,25 @@ let getClient = (orgId) => {
             }
         }
         if (userRec) {
-            var conn = new jsforce.Connection({
-                instanceUrl: userRec.instance_url,
-                accessToken: userRec.access_token
-            });
-            return {conn: conn, userRec: userRec};
+            // Grab new access token via JWT
+            var privateKey = fs.readFileSync(path.join(process.env.HOME, 'src/certs/PrivateKey.key'))
+            jwtflow.getToken(SF_CLIENT_ID, privateKey, userRec.username, function(err, accessToken) {
+                if (err) {
+                    callback(err, null)
+                } else {
+                    console.log("Got new token ", accessToken)
+                    userRec.access_token = accessToken
+                }
+     
+                var conn = new jsforce.Connection({
+                    instanceUrl: userRec.instance_url,
+                    accessToken: userRec.access_token
+                });
+                callback(null, {conn: conn, userRec: userRec});
+            })
         } else {
             return null;
         }
-
-        //var client = new faye.Client(org.oauth.instance_url + '/cometd/40.0/');
-        //client.setHeader('Authorization', 'OAuth ' + org.oauth.access_token);
     }
 }
 
@@ -77,29 +87,31 @@ let subscribeToPlatformEvents = () => {
     for (let eventkey in SUBS) {
         SUBS[eventkey].connections.forEach(function (orgId) {
             console.log(`Subscribing to platform event '${eventkey}' from Org ${orgId}`)
-            var tuple = getClient(orgId)
-            if (!tuple) {
-                console.log("Error: no connection for Org: ", orgId);
-                next;
-            }
-            var client = tuple.conn;
-            var userRec = tuple.userRec;
-            client.streaming.topic(`/event/${eventkey}`).subscribe((function(eventName, targetFunc, userRec) {
-                return function(message) {
-                    if (RECORD) {
-                        var packet = {}
-                        console.log("Recording event for key ", eventName)
-                        packet[eventName] = message
-                        fs.appendFileSync(recording_file, JSON.stringify(packet) + "\n");
-                    }
-                    if (DISPATCH_LOCAL) {
-                        dispatchLocal(targetFunc, message.payload, userRec);
-                    } else {
-                        dispatchCloud(targetFunc, message.payload, userRec);
-                    }
+            getClient(orgId, function(err, tuple) {              
+                if (err) {
+                    console.log("Error: no connection for Org: ", orgId, " from error ", err);
+                    return;
                 }
-            }(eventkey, SUBS[eventkey].function, userRec))
-            );
+                var client = tuple.conn;
+                var userRec = tuple.userRec;
+                client.streaming.topic(`/event/${eventkey}`).subscribe((function(eventName, targetFunc, userRec) {
+                    return function(message) {
+                        console.log("Got a platform event: ", message);
+                        if (RECORD) {
+                            var packet = {}
+                            console.log("Recording event for key ", eventName)
+                            packet[eventName] = message
+                            fs.appendFileSync(recording_file, JSON.stringify(packet) + "\n");
+                        }
+                        if (DISPATCH_LOCAL) {
+                            dispatchHeroku(targetFunc, message.payload, userRec);
+                        } else {
+                            dispatchCloud(targetFunc, message.payload, userRec);
+                        }
+                    }
+                }(eventkey, SUBS[eventkey].function, userRec))
+                );
+            })
         })
     }
 };
@@ -121,6 +133,20 @@ let replayRecordedEvents = () => {
         }       
       }
     });
+}
+
+let dispatchHeroku = (funcname, payload, userRec) => {
+    var event = {body: payload, auth: {access_token: userRec.access_token, instance_url: userRec.instance_url},
+                  meta: {organization_id: userRec.organization_id}};
+
+    console.log("Calling local server for ", funcname)
+    request.post({
+        url: HOST_ENDPOINT,
+        method: 'POST',
+        json: {key: "123", payload: event, function: funcname}
+    }, function (error, resp, body) { 
+        console.log("Function invoke returned: ", body)
+    })
 }
 
 let dispatchLocal = (funcname, payload, userRec) => {
@@ -266,7 +292,19 @@ var options = {
   cert: fs.readFileSync(path.join(process.env.HOME, 'src/certs/server.crt'))
 };
 
-https.createServer(options, app).listen(3000, function() {
+
+var server = https.createServer(options, app)
+var io = require('socket.io')(server);
+io.on('connection', function(){ 
+    console.log("Log stream connected...")
+    console.log = function() {
+        console.info.apply(console, arguments)
+        var args = Array.from(arguments)
+        io.emit('message', args.map((elt) => {return util.format(elt)}).join(" "))
+    }
+});
+
+server.listen(3000, function() {
     console.log('Express HTTPS server listening on port ' + app.get('port'));
 });
 
@@ -278,10 +316,14 @@ let startCommander = () => {
 
     program
       .version('0.0.1')
+      .option('-h --host [value]', 'Functions endpoint')
       .option('-r --record', 'Record events for later playback')
       .option('-p --playback', 'Playback previous recorded events')
       .command('start <local|cloud>')
       .action(function(target) {
+        if (program.host) {
+            HOST_ENDPOINT = program.host
+        }
         if (program.record) {
             RECORD = true;
             if (fs.existsSync(recording_file)) {
