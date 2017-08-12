@@ -2,6 +2,7 @@
 let fs = require('fs');
 let util = require('util')
 let path = require('path')
+let http = require('http')
 let https = require('https')
 let yaml = require('js-yaml')
 let request = require('request');
@@ -61,7 +62,7 @@ let getClient = (orgId, callback) => {
         }
         if (userRec) {
             // Grab new access token via JWT
-            var privateKey = fs.readFileSync(path.join(process.env.HOME, 'src/certs/PrivateKey.key'))
+            var privateKey = fs.readFileSync(path.join(__dirname, 'certs/PrivateKey.key'))
             jwtflow.getToken(SF_CLIENT_ID, privateKey, userRec.username, function(err, accessToken) {
                 if (err) {
                     callback(err, null)
@@ -288,12 +289,14 @@ app.get('/sf/callback', function(req, res) {
 })
 
 var options = {
-  key: fs.readFileSync(path.join(process.env.HOME, 'src/certs/server.key')),
-  cert: fs.readFileSync(path.join(process.env.HOME, 'src/certs/server.crt'))
+  key: fs.readFileSync(path.join(__dirname, 'certs/server.key')),
+  cert: fs.readFileSync(path.join(__dirname, 'certs/server.crt'))
 };
 
 
-var server = https.createServer(options, app)
+// var server = https.createServer(options, app)
+var server = http.createServer(app)
+/*
 var io = require('socket.io')(server);
 io.on('connection', function(){ 
     console.log("Log stream connected...")
@@ -302,10 +305,11 @@ io.on('connection', function(){
         var args = Array.from(arguments)
         io.emit('message', args.map((elt) => {return util.format(elt)}).join(" "))
     }
-});
+});*/
 
-server.listen(3000, function() {
-    console.log('Express HTTPS server listening on port ' + app.get('port'));
+var port = process.env.PORT || 3000;
+server.listen(port, function() {
+    console.log('Express HTTPS server listening on port ' + port);
 });
 
 
@@ -346,4 +350,4 @@ let startCommander = () => {
 
     program.parse(process.argv);   
 }
-startCommander()
+//startCommander()
