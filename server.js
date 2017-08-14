@@ -4,14 +4,20 @@ let util = require('util')
 let path = require('path')
 let http = require('http')
 let https = require('https')
+let Duplex = require('stream').Duplex;  
+
 let yaml = require('js-yaml')
 let request = require('request');
+let unzip = require('unzip-stream')
+
 let jsforce = require('jsforce');
 var jwtflow = require('salesforce-jwt');
 let faye = require('faye');
 let AWS = require('aws-sdk');
 AWS.config.update({region:'us-east-1'});
 let lambda = new AWS.Lambda();
+let dynamo = new AWS.DynamoDB.DocumentClient();
+let s3 = new AWS.S3()
 
 let AMZ_CLIENT_ID = process.env.AMZ_CLIENT_ID;
 let AMZ_CLIENT_SECRET = process.env.AMZ_CLIENT_SECRET;
@@ -19,8 +25,6 @@ let AMZ_REDIRECT_URI = 'http://localhost:3000/openid/callback';
 
 let SF_CLIENT_ID = process.env.SF_CLIENT_ID;
 let SF_CLIENT_SECRET = process.env.SF_CLIENT_SECRET;
-let SF_USER_NAME = process.env.SF_USER_NAME;
-let SF_USER_PASSWORD = process.env.SF_USER_PASSWORD;
 
 var DISPATCH_LOCAL = false;
 var RECORD = false;
@@ -28,24 +32,74 @@ var PLAYBACK = false;
 let recording_file = './events.log'
 let CLIENTS = {}
 let USERS = {}
+let USERS_TABLE = "cloudfuncs-users"
 let SUBS = {}
 let HOST_ENDPOINT = 'http://localhost:5000/'
 
 let loadUsers = () => {
-    if (fs.existsSync('./users.json')) {
-        USERS = JSON.parse(fs.readFileSync('./users.json'))
-    }   
+    dynamo.scan({TableName: USERS_TABLE}, function(err, data) {
+        if (err) {
+            console.error("Dynamo error reading users: ", err);
+        } else {
+            data.Items.forEach((user) => {
+                USERS[user.user_id] = user
+            })
+        }
+    })
 }
 
-let loadSubscriptions = (config_file) => {
-    var config = yaml.safeLoad(fs.readFileSync(config_file));
-    SUBS = config.Metadata.PESubscriptions
+let getProjectFile = (name, callback) => {
+    s3.getObject({Bucket: "cloudfuncs-codeprojects-dev", Key: "project1.zip"}, function(err, data) {
+        if (err) {
+            console.error("Error reading project from S3 ", err)
+            callback(err, null)
+        } else {
+            let stream = new Duplex();
+            stream.push(data.Body)
+            stream.push(null)
+            var fileFound = false;
+            stream.pipe(unzip.Parse()).on('entry', (entry) => {
+                if (entry.path.match(new RegExp(name + '$'))) {
+                    fileFound = true
+                    var parts = []
+                    entry.on('data', (part) => {parts.push(part)})
+                    entry.on('end', () => {
+                        callback(null, Buffer.concat(parts).toString('utf-8'))
+                        fileFound = true
+                    })
+                }
+            }).on('end', () => {
+                if (!fileFound) {                   
+                    callback("File not found", null)
+                }
+            })
+        }
+    })
+}
+
+let loadSubscriptions = () => {
+    getProjectFile("subscriptions.yml", (err, content) => {
+        if (err) {
+            console.log("Error loading subscriptions file: ", err)
+        } else {
+            var config = yaml.safeLoad(content);
+            SUBS = config.Metadata.PESubscriptions
+        }
+    })
 }
 
 let saveUser = (userInfo) => {
     console.log("Saving: ", userInfo)
     USERS[userInfo.user_id] = userInfo
-    fs.writeFileSync('./users.json', JSON.stringify(USERS))
+    userInfo.project_id = "1"
+    var params = {
+        TableName: USERS_TABLE, Item: userInfo
+    }
+    dynamo.put(params, function(err, data) {
+        if (err) {
+            console.error("Dynamo error: ", err);
+        }
+    })
 }
 
 let getClient = (orgId, callback) => {
@@ -221,6 +275,7 @@ let requestAccessToken = (code, redirect_uri) => {
     );
 }
 
+
 // =================== EXPRESS ====================
 var express = require('express')
 var app = express()
@@ -229,13 +284,6 @@ app.get('/openid/callback', function(req, res) {
     console.log(req.query);
     res.send("Login with Amazon done: " + JSON.stringify(req.query));
     requestAccessToken(req.query.code, AMZ_REDIRECT_URI);
-
-    /*
-    AWS.config.credentials = new AWS.WebIdentityCredentials({
-        RoleArn: 'arn:aws:iam::040552978376:role/service-role/mylambdarole',
-        ProviderId: 'www.amazon.com', // Omit this for Google
-        WebIdentityToken: ACCESS_TOKEN // Access token from identity provider
-    });*/
 })
 
 app.use(express.static('./views'))
@@ -247,7 +295,7 @@ var oauth2 = new jsforce.OAuth2({
   // loginUrl : 'https://test.salesforce.com',
   clientId : process.env.SF_CLIENT_ID,
   clientSecret : process.env.SF_CLIENT_SECRET,
-  redirectUri : 'https://localhost:3000/sf/callback'
+  redirectUri : process.env.SF_REDIRECT_URI
 });
 
 app.get('/', function (req, res) {
@@ -257,9 +305,15 @@ app.get('/', function (req, res) {
 
 app.get('/dashboard/getfunc/:funcname', function(req, res) {
     var parts = req.params.funcname.split(".")
-    var mod = require(`./${parts[0]}`)
-    var thefunc = mod[parts[1]]
-    res.send(`function ${parts[1]} ${thefunc.toString()}`);
+    getProjectFile(parts[0] + "\.js", (err, content) => {
+        if (err) {
+            res.send(err);
+        } else {
+            var funcs = eval("(function () {exports = {}; " + content + "; return exports})()")
+            var body = funcs[parts[1]].toString()
+            res.send(`function ${parts[1]} ${body}`);
+        }
+    })
 })
 
 app.get('/oauth2/auth', function(req, res) {
@@ -294,9 +348,8 @@ var options = {
 };
 
 
-// var server = https.createServer(options, app)
-var server = http.createServer(app)
-/*
+var server = https.createServer(options, app)
+//var server = http.createServer(app)
 var io = require('socket.io')(server);
 io.on('connection', function(){ 
     console.log("Log stream connected...")
@@ -305,7 +358,7 @@ io.on('connection', function(){
         var args = Array.from(arguments)
         io.emit('message', args.map((elt) => {return util.format(elt)}).join(" "))
     }
-});*/
+});
 
 var port = process.env.PORT || 3000;
 server.listen(port, function() {
@@ -315,7 +368,7 @@ server.listen(port, function() {
 
 let startCommander = () => {
     loadUsers();
-    loadSubscriptions('./subscriptions.yml')
+    loadSubscriptions()
     let program = require('commander');
 
     program
@@ -350,4 +403,4 @@ let startCommander = () => {
 
     program.parse(process.argv);   
 }
-//startCommander()
+startCommander()

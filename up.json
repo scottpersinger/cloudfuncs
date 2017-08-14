@@ -1,0 +1,11 @@
+{
+	"name":"cloudfuncs",
+	"environment": {
+		"AMZ_CLIENT_ID": "foo",
+		"AMZ_CLIENT_SECRET": "foo"
+	},
+	"lambda": {
+   		"memory": 512,
+    	"timeout": 10
+  	}
+}

@@ -24,6 +24,7 @@
     "nforce": "^1.7.0",
     "request": "^2.81.0",
     "salesforce-jwt": "^0.1.0",
-    "socket.io": "^2.0.3"
+    "socket.io": "^2.0.3",
+    "unzip-stream": "^0.1.2"
   }
 }
