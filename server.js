@@ -424,7 +424,7 @@ let startCommander = () => {
         } else {
             DISPATCH_LOCAL = false;
         }
-      });
+      }); 
 
     program.parse(process.argv);   
 }
