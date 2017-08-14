@@ -67,7 +67,8 @@ let getProjectFile = (name, callback) => {
             stream.push(null)
             var fileFound = false;
             stream.pipe(unzip.Parse()).on('entry', (entry) => {
-                if (entry.path.match(new RegExp(name + '$'))) {
+                if (entry.path.match(new RegExp(name + '$')) && !fileFound) {
+                    console.log("gpf found match on ", entry.path)
                     fileFound = true
                     var parts = []
                     entry.on('data', (part) => {parts.push(part)})
@@ -317,12 +318,16 @@ app.get('/', function (req, res) {
 
 app.get('/dashboard/getfunc/:funcname', function(req, res) {
     var parts = req.params.funcname.split(".")
+    console.log("Calling getProjectFile")
     getProjectFile(parts[0] + "\.js", (err, content) => {
+        console.log("getProjectFile callback, content: ", content ? content.substring(0,10) : '<null>')
         if (err) {
+            console.log("Calling res.send")
             res.send(err);
         } else {
             var funcs = eval("(function () {exports = {}; " + content + "; return exports})()")
             var body = funcs[parts[1]].toString()
+            console.log("Calling res.send")
             res.send(`function ${parts[1]} ${body}`);
         }
     })

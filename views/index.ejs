@@ -63,8 +63,7 @@
 </div>
 
 <div style="float:left;width:49%;height:99%">
-	<pre id="codediv" style="height:55%;border-bottom:1px solid #CCC;overflow:scroll">
-	</pre>
+	<pre id="codediv" style="height:55%;border-bottom:1px solid #CCC;overflow:scroll"></pre>
 	<pre id="logs" style="height:45%;overflow:scroll;background-color:#DDD"></pre>
 </div>
 
@@ -80,7 +79,7 @@
 
   function loadFunction(func) {
   	$.get('/dashboard/getfunc/' + func, function(data) {
-  		$('#codediv').text(data);
+  		$('#codediv').text(data.trim());
   	}, 'text');
   }
 
