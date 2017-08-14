@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server"
+    "start": "node server",
+    "build": "rm ../cfservice.zip; zip ../cfservice.zip * certs/*"
   },
   "bin": {
     "cloudfuncs": "./server.js"

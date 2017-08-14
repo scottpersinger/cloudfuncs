@@ -36,6 +36,12 @@ let USERS_TABLE = "cloudfuncs-users"
 let SUBS = {}
 let HOST_ENDPOINT = 'http://localhost:5000/'
 
+console.log("!!! __dirname: ", __dirname)
+fs.readdirSync(".").forEach((f) => {console.log(f)})
+console.log("\n!!! Walksync from dirname")
+fs.readdirSync(__dirname).forEach((f) => {console.log(f)})
+
+
 let loadUsers = () => {
     dynamo.scan({TableName: USERS_TABLE}, function(err, data) {
         if (err) {
