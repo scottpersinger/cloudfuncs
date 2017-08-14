@@ -33,16 +33,18 @@ let recording_file = './events.log'
 let CLIENTS = {}
 let USERS = {}
 let USERS_TABLE = "cloudfuncs-users"
+let CONFIG_TABLE = "cloudfuncs-config"
 let SUBS = {}
 let HOST_ENDPOINT = 'http://localhost:5000/'
 
-console.log("!!! __dirname: ", __dirname)
-fs.readdirSync(".").forEach((f) => {console.log(f)})
-console.log("\n!!! Walksync from dirname")
-fs.readdirSync(__dirname).forEach((f) => {console.log(f)})
-
-
 let loadUsers = () => {
+    dynamo.get({TableName: CONFIG_TABLE, Key: {key: "app_target"}}, function(err, data) {
+        if (err) {
+            console.log("Dynamo error reading app target: ", err)
+        } else {
+            HOST_ENDPOINT = data.Item.value;
+        }
+    })
     dynamo.scan({TableName: USERS_TABLE}, function(err, data) {
         if (err) {
             console.error("Dynamo error reading users: ", err);
@@ -83,13 +85,14 @@ let getProjectFile = (name, callback) => {
     })
 }
 
-let loadSubscriptions = () => {
+let loadSubscriptions = (callback) => {
     getProjectFile("subscriptions.yml", (err, content) => {
         if (err) {
             console.log("Error loading subscriptions file: ", err)
         } else {
             var config = yaml.safeLoad(content);
             SUBS = config.Metadata.PESubscriptions
+            callback()
         }
     })
 }
@@ -285,6 +288,9 @@ let requestAccessToken = (code, redirect_uri) => {
 // =================== EXPRESS ====================
 var express = require('express')
 var app = express()
+var bodyParser = require('body-parser')
+
+app.use(bodyParser.json())
 
 app.get('/openid/callback', function(req, res) {
     console.log(req.query);
@@ -306,7 +312,7 @@ var oauth2 = new jsforce.OAuth2({
 
 app.get('/', function (req, res) {
 
-    res.render('index', { users: USERS, subs: SUBS })
+    res.render('index', { users: USERS, subs: SUBS, endpoint: HOST_ENDPOINT })
 })
 
 app.get('/dashboard/getfunc/:funcname', function(req, res) {
@@ -348,6 +354,25 @@ app.get('/sf/callback', function(req, res) {
   });
 })
 
+app.post('/apptarget', function(req, res) {
+    console.log("Saving: ", req.body.target);
+    dynamo.update({
+        TableName: CONFIG_TABLE, 
+        Key: {key: "app_target"}, 
+        UpdateExpression: "SET #VV = :v",
+        ExpressionAttributeNames: {"#VV": "value"},
+        ExpressionAttributeValues: {":v": req.body.target}
+    }, function(err, data) {
+        if (err) {
+            console.error("Dynamo error: ", err);
+        } else {
+            HOST_ENDPOINT = req.body.target;
+        }
+    })
+
+    res.send("OK")
+})
+
 var options = {
   key: fs.readFileSync(path.join(__dirname, 'certs/server.key')),
   cert: fs.readFileSync(path.join(__dirname, 'certs/server.crt'))
@@ -374,7 +399,7 @@ server.listen(port, function() {
 
 let startCommander = () => {
     loadUsers();
-    loadSubscriptions()
+    loadSubscriptions(subscribeToPlatformEvents)
     let program = require('commander');
 
     program
@@ -398,12 +423,6 @@ let startCommander = () => {
             DISPATCH_LOCAL = true;
         } else {
             DISPATCH_LOCAL = false;
-        }
-        if (program.playback) {
-            PLAYBACK = true;
-            replayRecordedEvents();
-        } else {
-            subscribeToPlatformEvents();
         }
       });
 

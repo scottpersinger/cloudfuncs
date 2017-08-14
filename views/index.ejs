@@ -40,6 +40,11 @@
 	  <% } %>
 	</table>
 
+	<h3>App target</h3>
+	<input id="target-name" type="text" name="target" style="width:300px;float:left" value="<%= endpoint %>"/>
+	<button onclick="saveTarget(); return false" style="float:left;margin-left:20px">Save</button>
+	<div style="clear:both"></div>
+
 	<hr>
 	<h2>Subscriptions</h2>
 	<table>
@@ -77,6 +82,20 @@
   	$.get('/dashboard/getfunc/' + func, function(data) {
   		$('#codediv').text(data);
   	}, 'text');
+  }
+
+  function saveTarget(e) {
+  	$.ajax({
+  		type: "POST",
+  		url: "/apptarget", 
+  		data: JSON.stringify({target: $('#target-name').val()}), 
+  		success: function() {
+  			alert("Saved");
+  		}, 
+  		contentType: 'application/json',
+  		processData:false
+  	})
+  	return false;
   }
 </script>
 
