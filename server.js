@@ -203,13 +203,13 @@ let dispatchHeroku = (funcname, payload, userRec) => {
     var event = {body: payload, auth: {access_token: userRec.access_token, instance_url: userRec.instance_url},
                   meta: {organization_id: userRec.organization_id}};
 
-    console.log("Calling local server for ", funcname)
+    console.log(`==> ${HOST_ENDPOINT}/${funcname}`)
     request.post({
         url: HOST_ENDPOINT,
         method: 'POST',
         json: {key: "123", payload: event, function: funcname}
     }, function (error, resp, body) { 
-        console.log("Function invoke returned: ", body)
+        console.log("<== ", body)
     })
 }
 
