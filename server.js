@@ -26,7 +26,10 @@ let AMZ_REDIRECT_URI = 'http://localhost:3000/openid/callback';
 let SF_CLIENT_ID = process.env.SF_CLIENT_ID;
 let SF_CLIENT_SECRET = process.env.SF_CLIENT_SECRET;
 
-var DISPATCH_LOCAL = false;
+let ENDPOINT_KEY = process.env.ENDPOINT_KEY
+let CF_CLIENT_KEY = process.env.CF_CLIENT_KEY
+
+var DISPATCH_LOCAL = true;
 var RECORD = false;
 var PLAYBACK = false;
 let recording_file = './events.log'
@@ -171,7 +174,7 @@ let subscribeToPlatformEvents = () => {
                         if (DISPATCH_LOCAL) {
                             dispatchHeroku(targetFunc, message.payload, userRec);
                         } else {
-                            dispatchCloud(targetFunc, message.payload, userRec);
+                            dispatchLambda(targetFunc, message.payload, userRec);
                         }
                     }
                 }(eventkey, SUBS[eventkey].function, userRec))
@@ -194,7 +197,7 @@ let replayRecordedEvents = () => {
         if (DISPATCH_LOCAL) {
             dispatchLocal(targetFunc, message.payload);
         } else {
-            dispatchCloud(targetFunc, message.payload);
+            dispatchLambda(targetFunc, message.payload);
         }       
       }
     });
@@ -208,7 +211,7 @@ let dispatchHeroku = (funcname, payload, userRec) => {
     request.post({
         url: HOST_ENDPOINT,
         method: 'POST',
-        json: {key: "123", payload: event, function: funcname}
+        json: {key: ENDPOINT_KEY, payload: event, function: funcname}
     }, function (error, resp, body) { 
         console.log("<== ", body)
     })
@@ -230,7 +233,7 @@ let dispatchLocal = (funcname, payload, userRec) => {
     });
 }
 
-let dispatchCloud = (funcname, payload, userRec) => {
+let dispatchLambda = (funcname, payload, userRec) => {
     var funcparts = funcname.split(".")
     var event = {body: payload, auth: {access_token: userRec.access_token, instance_url: userRec.instance_url},
                   meta: {organization_id: userRec.organization_id}};
@@ -357,6 +360,29 @@ app.get('/sf/callback', function(req, res) {
         // ...
         res.send('<html><body><h2>success</h2><a href="/">Home</a></body></html'); // or your desired response
   });
+})
+
+app.get('/sf/auth/:auth_key', function(req, res) {
+    if (req.params.auth_key != CF_CLIENT_KEY) {
+        return res.status(401).send("Invalid key")
+    }
+    if (req.query.username) {
+        matches = Object.keys(USERS).filter((uid) => {return USERS[uid].username == req.query.username})
+        if (matches.length > 0) {
+            res.send(USERS[matches[0]])
+        } else {
+            res.status(400).send("No matching user found")
+        }
+    } else if (req.query.organization_id) {
+        matches = Object.keys(USERS).filter((uid) => {return USERS[uid].organization_id == req.query.organization_id})
+        if (matches.length > 0) {
+            res.send(USERS[matches[0]])
+        } else {
+            res.status(400).send("No matching user found")
+        }
+    } else {
+        res.status(500).send("Must supply username or organization_id")
+    }
 })
 
 app.post('/apptarget', function(req, res) {

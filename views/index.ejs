@@ -14,6 +14,11 @@
 		}
   </style>
   <script src="jquery-3.2.1.min.js"></script>
+
+<!-- highlight.hs -->
+<link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/styles/default.min.css">
+<script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/highlight.min.js"></script>
+
 </head>
 <body>
 
@@ -63,7 +68,9 @@
 </div>
 
 <div style="float:left;width:49%;height:99%">
-	<pre id="codediv" style="height:55%;border-bottom:1px solid #CCC;overflow:scroll"></pre>
+	<pre style="height:55%;border-bottom:1px solid #CCC;overflow:scroll">
+		<code class="javascript" id="codediv"></code>
+	</pre>
 	<pre id="logs" style="height:45%;overflow:scroll;background-color:#DDD"></pre>
 </div>
 
@@ -80,6 +87,9 @@
   function loadFunction(func) {
   	$.get('/dashboard/getfunc/' + func, function(data) {
   		$('#codediv').text(data.trim());
+  		$('pre code').each(function(i, block) {
+    		hljs.highlightBlock(block);
+  		});
   	}, 'text');
   }
 
