@@ -1,5 +1,18 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
+
+	<meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+<style>
+body {
+  min-height: 75rem;
+  padding-top: 4.5rem;
+}
+</style>
+
+<!--
   <style>
 		table {
     		border-collapse: collapse;
@@ -13,67 +26,88 @@
 			padding:10px;
 		}
   </style>
+-->
+
   <script src="jquery-3.2.1.min.js"></script>
+
+<!-- bootstrap -->
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta/css/bootstrap.min.css" integrity="sha384-/Y6pD6FV/Vv2HJnA6t+vslU6fwYXjCFtcEpHbNJ0lyAFsXTsjBbfaDjzALeQsN6M" crossorigin="anonymous">
 
 <!-- highlight.hs -->
 <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/styles/default.min.css">
 <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/highlight.min.js"></script>
 
+<link rel="stylesheet" href="octicons.min.css">
+
 </head>
 <body>
 
-<div style="float:left;width:50%;height:100%;border-right:1px solid #ccc">
+	  <nav class="navbar navbar-expand-md navbar-dark fixed-top bg-dark">
+      <a class="navbar-brand" href="#">Cloudfuncs Router</a>
+      <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarCollapse">
+        <ul class="navbar-nav mr-auto">
+          <li class="nav-item active">
+            <a class="nav-link" href="#">Home <span class="sr-only">(current)</span></a>
+          </li>
+      </div>
+    </nav>
 
-	<h1>Cloudfuncs</h1>
+<div class="container-fluid" style="height: 100vh">
+  <div class="row" style="height: 92vh">
+  	<div class="col-md-6">
+			<form action="/oauth2/auth" method="GET">
+			<button type="button" class="btn btn-primary float-right" type="submit">Add Connection to Salesforce</button>
+			</form>
 
-	<form action="/oauth2/auth" method="GET">
-	<button type="submit">Login to Salesforce</button>
-	</form>
+			<h2>Connections</h2>
 
-	<h2>Connections<h2>
+			<table class="table border">
+			    <tr>
+				  <th>Username</th><th>Org Id</th>
+				</tr>
+			  <% for (var userId in users) { %>
+			  <% user = users[userId] %>
+			  	<tr>
+			  		<td><%= user.username %></td>
+			  		<td><%= user.organization_id %></td>
+			  	</tr>
+			  <% } %>
+			</table>
 
-	<table>
-	    <tr>
-		  <th>Username</th><th>Org Id</th>
-		</tr>
-	  <% for (var userId in users) { %>
-	  <% user = users[userId] %>
-	  	<tr>
-	  		<td><%= user.username %></td>
-	  		<td><%= user.organization_id %></td>
-	  	</tr>
-	  <% } %>
-	</table>
+			<h3>Function target</h3>
+			<input id="target-name" type="text" name="target" style="width:300px;float:left" value="<%= endpoint %>"/>
+			<button onclick="saveTarget(); return false" class="btn btn-info float-right">Save</button>
+			<div style="clear:both"></div>
 
-	<h3>App target</h3>
-	<input id="target-name" type="text" name="target" style="width:300px;float:left" value="<%= endpoint %>"/>
-	<button onclick="saveTarget(); return false" style="float:left;margin-left:20px">Save</button>
-	<div style="clear:both"></div>
+			<hr>
+			<h2>Subscriptions</h2>
+			<table class="table border">
+			    <tr>
+				  <th>Platform Event</th><th>Function</th><th>Org Id</th>
+				</tr>
+			  <% for (var pe in subs) { %>
+			  <% sub = subs[pe] %>
+			  	<tr>
+			  		<td><%= pe %></td>
+			  		<td><a href="#" onclick="loadFunction('<%= sub.function %>')"><%= sub.function %></a></td>
+			  		<td><%- sub.connections.join("<br />") %></td>
+			  	</tr>
+			  <% } %>
+			</table>
+		</div>
 
-	<hr>
-	<h2>Subscriptions</h2>
-	<table>
-	    <tr>
-		  <th>Platform Event</th><th>Function</th><th>Org Id</th>
-		</tr>
-	  <% for (var pe in subs) { %>
-	  <% sub = subs[pe] %>
-	  	<tr>
-	  		<td><%= pe %></td>
-	  		<td><a href="#" onclick="loadFunction('<%= sub.function %>')"><%= sub.function %></a></td>
-	  		<td><%- sub.connections.join("<br />") %></td>
-	  	</tr>
-	  <% } %>
-	</table>
+		<div class="col-md-6">
+		  <%- delButton %>
+			<pre id="logs" class="border" style="padding:5px;height:95%;overflow:scroll;background-color:#DDD"></pre>
+		</div>
+	</div> <!-- row -->
 </div>
 
-<div style="float:left;width:49%;height:99%">
-	<pre style="height:55%;border-bottom:1px solid #CCC;overflow:scroll">
-		<code class="javascript" id="codediv"></code>
-	</pre>
-	<pre id="logs" style="height:45%;overflow:scroll;background-color:#DDD"></pre>
-</div>
-
+<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.11.0/umd/popper.min.js" integrity="sha384-b/U6ypiBEHpOf/4+1nzFpr53nxSS+GLCkfwBdFNTxtclqqenISfwAzpKaMNFNmj4" crossorigin="anonymous"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta/js/bootstrap.min.js" integrity="sha384-h0AbiXch4ZDo7tp9hKZ4TsHbi047NrKGLO3SEJAg45jXxnGIfYzk4Si90RDIqNm1" crossorigin="anonymous"></script>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
@@ -84,6 +118,10 @@
     	console.log('message: ' + msg);
   	});
 
+  function deleteLogs() {
+  	$('#logs').html('');
+  }
+  
   function loadFunction(func) {
   	$.get('/dashboard/getfunc/' + func, function(data) {
   		$('#codediv').text(data.trim());

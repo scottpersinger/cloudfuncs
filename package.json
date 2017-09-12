@@ -1,5 +1,5 @@
 {
-  "name": "cfservice",
+  "name": "cloudfuncs-router",
   "version": "1.0.0",
   "description": "",
   "main": "server.js",
@@ -24,6 +24,7 @@
     "js-yaml": "^3.9.1",
     "jsforce": "^1.8.0",
     "nforce": "^1.7.0",
+    "octicons": "^6.0.1",
     "request": "^2.81.0",
     "salesforce-jwt": "^0.1.0",
     "socket.io": "^2.0.3",

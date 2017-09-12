@@ -1,6 +1,7 @@
 node_modules
 events.log
 users.json
+replay_ids
 .DS_Store
 
 # Elastic Beanstalk Files

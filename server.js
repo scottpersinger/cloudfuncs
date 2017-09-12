@@ -116,6 +116,20 @@ let saveUser = (userInfo) => {
     })
 }
 
+let loadReplayTable = () => {
+    var replayTable = {};
+    if (fs.existsSync('replay_ids')) {
+        replayTable = JSON.parse(fs.readFileSync('replay_ids'))
+    }
+    return replayTable;    
+}
+
+let saveReplayId = (channel, replayId) => {
+    var replayTable = loadReplayTable();
+    replayTable[channel] = replayId;
+    fs.writeFileSync('replay_ids', JSON.stringify(replayTable));
+}
+
 let getClient = (orgId, callback) => {
     if (CLIENTS[orgId]) {
         return CLIENTS[orgId]
@@ -163,20 +177,55 @@ let subscribeToPlatformEvents = () => {
                 }
                 var client = tuple.conn;
                 var userRec = tuple.userRec;
-                client.streaming.topic(`/event/${eventkey}`).subscribe((function(eventName, targetFunc, userRec) {
+                // Hack the replay id in there
+                var eventChannel = `/event/${eventkey}`;
+                var fayeClient = client.streaming._getFayeClient(eventChannel);
+                var replayTable = loadReplayTable();
+
+                fayeClient.addExtension({
+                    incoming: function(message, callback) {
+                        if (message.channel === '/meta/handshake') {
+                            // check that replay is enabled
+                        }
+                        callback(message);
+                    },
+
+                    outgoing: function(message, callback) {
+                        if (message.channel === '/meta/subscribe') {
+                            if (replayTable[eventChannel]) {
+                                if (!message.ext) {
+                                    message.ext = {};
+                                }
+                                var replayFromMap = {};
+                                replayFromMap[eventChannel] = replayTable[eventChannel];
+                                message.ext['replay'] = replayFromMap;
+                            }
+                            console.log(message);
+                        }
+                        callback(message);
+                    }
+                })
+
+
+                client.streaming.topic(eventChannel).subscribe((function(eventName, targetFunc, userRec) {
                     return function(message) {
-                        console.log("Got a platform event: ", message);
-                        if (RECORD) {
-                            var packet = {}
-                            console.log("Recording event for key ", eventName)
-                            packet[eventName] = message
-                            fs.appendFileSync(recording_file, JSON.stringify(packet) + "\n");
-                        }
-                        if (DISPATCH_LOCAL) {
-                            dispatchHeroku(targetFunc, message.payload, userRec);
-                        } else {
-                            dispatchLambda(targetFunc, message.payload, userRec);
-                        }
+                        app.locals.traceSpan('-> platformEvent', (span) => {
+                            console.log("Got a platform event: ", message);                           
+                            if (RECORD) {
+                                var packet = {}
+                                console.log("Recording event for key ", eventName)
+                                packet[eventName] = message
+                                fs.appendFileSync(recording_file, JSON.stringify(packet) + "\n");
+                            }
+                            dispatchHeroku(targetFunc, message.payload, userRec, () => {
+                                if (message.event.replayId) {
+                                    saveReplayId(`/event/${eventName}`, message.event.replayId);
+                                }
+                                if (span) {
+                                    span.finish();
+                                }
+                            });
+                        })
                     }
                 }(eventkey, SUBS[eventkey].function, userRec))
                 );
@@ -204,7 +253,7 @@ let replayRecordedEvents = () => {
     });
 }
 
-let dispatchHeroku = (funcname, payload, userRec) => {
+let dispatchHeroku = (funcname, payload, userRec, callback) => {
     var event = {body: payload, auth: {access_token: userRec.access_token, instance_url: userRec.instance_url},
                   meta: {organization_id: userRec.organization_id}};
 
@@ -214,7 +263,9 @@ let dispatchHeroku = (funcname, payload, userRec) => {
         method: 'POST',
         json: {key: ENDPOINT_KEY, payload: event, function: funcname}
     }, function (error, resp, body) { 
+        if (error) {console.log("! ", error)}
         console.log("<== ", body)
+        callback();
     })
 }
 
@@ -292,8 +343,11 @@ let requestAccessToken = (code, redirect_uri) => {
 
 // =================== EXPRESS ====================
 var express = require('express')
+var expressray = require('expressray')
 var app = express()
+expressray(app);
 var bodyParser = require('body-parser')
+var octicons = require('octicons');
 
 app.use(bodyParser.json())
 
@@ -316,8 +370,12 @@ var oauth2 = new jsforce.OAuth2({
 });
 
 app.get('/', function (req, res) {
-
-    res.render('index', { users: USERS, subs: SUBS, endpoint: HOST_ENDPOINT })
+    res.render('index', { users: USERS, subs: SUBS, endpoint: HOST_ENDPOINT,
+                          delButton: octicons['circle-slash'].toSVG({
+                                onclick:"deleteLogs();",
+                                style:"position:absolute;top:4px;right:18px"
+                            }) 
+                        });
 })
 
 app.get('/dashboard/getfunc/:funcname', function(req, res) {
