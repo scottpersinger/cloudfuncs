@@ -9,4 +9,6 @@ User function --> Cloudfuncs: status code
 Note right of User function: processing...
 User function -> Salesforce: API calls
 ```
-
+```diagram-uml
+class foo
+```
