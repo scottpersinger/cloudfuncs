@@ -10,6 +10,6 @@ Note right of User function: processing...
 User function -> Salesforce: API calls
 ```
 ```diagram-uml
-Animal -- Dog
-Animal -- Cat
+Animal -- Dog: < isA
+Animal -- Cat: < isA
 ```
