@@ -2,16 +2,14 @@
 
 ```diagram-uml
 cloud internet
-node apiori
-node bapi_srv
-node marlin_srv
-node sources_srv
-internet -- apiori
-apiori -- bapi_srv
-bapi_srv -- sources_srv
-sources_srv -- PPRO
-sources_srv -- Klarna
-marlin_srv -- sources_srv
+node server
+database postgres
+database redis
+node sendgrid
+internet -- server
+server -- postgres
+server -- redis
+server -- sendgrid
 
 ```
 
