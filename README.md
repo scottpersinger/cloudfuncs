@@ -9,6 +9,8 @@ node sources_srv
 internet -- apiori
 apiori -- bapi_srv
 bapi_srv -- sources_srv
+sources_srv -- PPRO
+sources_srv -- Klarna
 marlin_srv -- sources_srv
 
 ```
